@@ -429,7 +429,7 @@ fn build_forwarder(
     let Some(syslog) = forward.syslog.as_ref() else {
         return Ok(None);
     };
-        syslog
+    syslog
         .validate()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let host: std::net::SocketAddr = syslog.host.parse().map_err(|e| {
