@@ -646,4 +646,22 @@ mod tests {
         );
         drop(reclaimed);
     }
+    #[tokio::test(flavor = "current_thread")]
+    async fn build_forwarder_refuses_a_zero_enterprise_number() {
+        use sysknife_core::config::{AuditForwardSection, AuditSection, SyslogForwardSection};
+        let audit = AuditSection {
+            forward: Some(AuditForwardSection {
+                syslog: Some(SyslogForwardSection {
+                    host: "127.0.0.1:65000".to_string(),
+                    facility: 1,
+                    enterprise_number: 0,
+                }),
+            }),
+            ..Default::default()
+        };
+        let err = super::build_forwarder(Some(&audit))
+            .expect_err("a zero PEN must stop the daemon building a forwarder");
+        assert!(err.to_string().contains("enterprise_number"), "got: {err}");
+    }
 }
+
