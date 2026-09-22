@@ -12,8 +12,27 @@ Releases before `0.2.5` predate the public launch; their notes live in the
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-09-22
+
+### Changed
+
+- `sysknife-setup` requires Node 22 or newer. Node 18 and 20 no longer receive
+  security fixes, so this drops support for them rather than retiring an
+  untested claim: `engines.node`, the preflight guard and all six published
+  support statements move together, and the refusal message says why the floor
+  moved. Nothing in CI is affected; every job that touches JavaScript already
+  runs Node 24 (#327).
+
 ### Fixed
 
+- `sysknife audit verify` now reports `cannot_verify` and exits 2 over an empty
+  transaction log with no external checkpoint anchor, instead of reporting
+  `intact` and exiting 0. An erased store and a store that was never written
+  read the same to the chain check on its own, so the verdict says it cannot
+  tell them apart rather than calling the trail sound. Configuring
+  `SYSKNIFE_CHECKPOINT_DB` restores a definite answer. The MCP
+  `sysknife_audit_verify` tool still reports `intact` in this case and is
+  tracked separately (#338, #466).
 - The release-rehearsal pin check now fails when it extracted too few `uses:`
   lines, instead of reporting the invariant holding over an empty set (#407).
 
