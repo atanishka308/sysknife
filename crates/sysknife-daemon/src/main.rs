@@ -657,7 +657,6 @@ mod tests {
                     enterprise_number: 0,
                 }),
             }),
-            ..Default::default()
         };
         let err = super::build_forwarder(Some(&audit))
             .expect_err("a zero PEN must stop the daemon building a forwarder");
