@@ -12,6 +12,57 @@ Releases before `0.2.5` predate the public launch; their notes live in the
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-09-23
+
+### Fixed
+
+- **The GitHub YAML gates open every file a `uses:` can hide in.**
+  ([#471](https://github.com/lacs-project/sysknife/pull/471)) A mutable action
+  reference inside a local composite action under `.github/actions/` was checked
+  by nothing: SHA pinning, version-comment verification, the Node EOL check and
+  yamllint all globbed `.github/workflows/*.yml` and stopped there.
+  `scripts/github_yaml.py` now discovers nested `action.yml` and `action.yaml`
+  beside the workflows and every gate reads the same set, locally through
+  `scripts/lint-github-yaml.sh` and in CI. An absent actions directory stays
+  valid; one that exists and holds no metadata fails discovery instead of
+  reporting a clean scan, as does an empty issue-template set, because a scan
+  that read nothing must not print an all-clear. Nine fixtures cover pinned and
+  unpinned block and flow composites, both metadata extensions, empty roots,
+  malformed and directory-shaped inputs, and the lint entry point itself
+  (closes [#459](https://github.com/lacs-project/sysknife/issues/459)). Thanks
+  to [@QinXi-ai](https://github.com/QinXi-ai).
+- **The release workflow waits for crates.io to serve what it just published.**
+  ([#463](https://github.com/lacs-project/sysknife/pull/463)) Publication walked
+  the dependency order with a fixed `sleep 30` between crates, which is a guess
+  about index latency rather than an observation of it, and a slow index left a
+  dependent crate publishing against a version the registry did not yet serve.
+  `scripts/crates-index-poll.sh` polls for the exact version and separates "not
+  published yet" from a transport error, so the loop cannot read a failed
+  request as an absent crate. This release is the first to use it.
+
+### Changed
+
+- **The version registry catches a bypass and an unlisted crate.**
+  ([#498](https://github.com/lacs-project/sysknife/pull/498))
+  `tests/release/version-sites.test.sh` now fails when `bump_version.sh` or
+  `check_release_versions.sh` stops going through `scripts/release_versions.py`,
+  and when a workspace manifest carrying the release version is missing from
+  `release-versions.json`. Thanks to
+  [@mikevillari](https://github.com/mikevillari).
+- Dependency bumps: async-openai 0.42.0
+  ([#494](https://github.com/lacs-project/sysknife/pull/494)), rmcp 3.4.0 with
+  clap 4.6.7 and clap_complete 4.6.11
+  ([#493](https://github.com/lacs-project/sysknife/pull/493)),
+  `taiki-e/install-action` 2.87.14
+  ([#495](https://github.com/lacs-project/sysknife/pull/495)), and react and
+  react-dom 19.3.0 with vite 8.3.0 in the paused desktop shell
+  ([#492](https://github.com/lacs-project/sysknife/pull/492)). Two of those
+  needed the code to follow: rmcp 3.4 deprecates the `ServerInfo` alias in
+  favour of `ServerConfig` (both alias `InitializeResult`, so the served MCP
+  handshake is unchanged), and async-openai 0.42 adds `metadata` and
+  `moderation` to `CreateChatCompletionResponse` and `misalignment` to
+  `ApiError`, which the adapter's test fixtures name field by field.
+
 ## [0.20.0] — 2026-09-22
 
 ### Security
