@@ -664,4 +664,3 @@ mod tests {
         assert!(err.to_string().contains("enterprise_number"), "got: {err}");
     }
 }
-
