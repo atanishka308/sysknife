@@ -198,7 +198,6 @@ fn build_run_opts(cli: &Cli, socket: crate::client::SocketTarget) -> RunOpts {
     }
 }
 
-
 #[cfg(test)]
 mod dangerously_skip_approval_wiring_tests {
     use super::*;
