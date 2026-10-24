@@ -12,6 +12,238 @@ Releases before `0.2.5` predate the public launch; their notes live in the
 
 ## [Unreleased]
 
+### Security
+
+- **The lockfile moves ctutils to 0.4.4 for RUSTSEC-2026-0385.** ctutils 0.4.2
+  could compile its constant-time mask helpers to branches, and on 32-bit
+  targets its `u128` comparisons branched too. It reaches SysKnife through
+  digest 0.11 (ed25519-dalek, hmac, and the SCRAM login in sqlx-postgres).
+  SysKnife's own token and receipt comparisons use `subtle` and are not
+  affected. No API changes.
+
+### Fixed
+
+- **A successful automatic rollback shows as `rolled back` in the CLI.**
+  ([#632](https://github.com/lacs-project/sysknife/pull/632))
+  The CLI had no arm for `RolledBack` and printed `⚠ unknown`, and it dropped
+  the job's `rollback_ref`. It now prints `rolled back` and the line
+  `rolled back with: rpm-ostree rollback`.
+
+## [0.26.0] — 2026-10-21
+
+### Security
+
+- **The provider TLS path stops trusting distrusted emSign certificates.**
+  ([#628](https://github.com/lacs-project/sysknife/pull/628))
+  RUSTSEC-2026-0381 to 0383: webpki-roots and webpki-root-certs 1.0.7 still
+  bundled the emSign roots, and rustls-webpki 0.103.15 accepted chains through
+  a small set of distrusted intermediates. All three reach the brain through
+  reqwest, which carries every provider call. The lockfile moves to
+  rustls-webpki 0.103.16 and the 1.0.10 root lists; no API changes.
+
+- **rustls moves to 0.23.46.** ([#616](https://github.com/lacs-project/sysknife/pull/616))
+  RUSTSEC-2026-0346 to 0349 reached the brain through reqwest, which carries
+  provider calls, and the daemon through sqlx's Postgres TLS. The worst of the
+  four is `Debug` output that printed TLS session secrets. The others are a
+  key-exchange downgrade hint, a pre-authentication Brotli allocation that is
+  off by default, and early data sent after an ECH rejection. The patch release
+  changes no API.
+
+- **Read tools stop forwarding credentials to the LLM provider.**
+  ([#573](https://github.com/lacs-project/sysknife/pull/573)) A journal line
+  carrying a password assignment or a `Bearer` token reached the provider in a
+  tool result and stayed in the retained context for later turns. The brain now
+  redacts plaintext credential assignments, `Bearer` values, recognizable
+  provider-key shapes and private-key blocks before normalization and
+  truncation, and screens the retained context too. An unterminated quoted
+  value stops at the line boundary, so the accepted-login and sudo records after
+  it survive, and `mysqldump --password hunter2 mydb` loses the password and
+  keeps its neighbours. `SECURITY.md` describes the screen and its limits
+  (closes [#552](https://github.com/lacs-project/sysknife/issues/552)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **`sysknife approve` honours `--dry-run`, `--max-risk` and
+  `--non-interactive`.** ([#579](https://github.com/lacs-project/sysknife/pull/579))
+  Explicit approval ignored the global safety flags, so a dry run, a plan above
+  the requested ceiling or a non-interactive invocation could still mint a
+  usable receipt. Dry run now shows the preview with no prompt and no receipt,
+  and live approval refuses the other two. `--yes` and unattended consent still
+  leave the human confirmation in place. `docs/cli.md` lists which global flags
+  apply to each command (closes
+  [#545](https://github.com/lacs-project/sysknife/issues/545)). Thanks to
+  [@QinXi-ai](https://github.com/QinXi-ai).
+- **`--step-by-step` checks the whole plan before it runs the first step.**
+  ([#575](https://github.com/lacs-project/sysknife/pull/575)) A plan whose third
+  step broke the risk ceiling or needed interaction executed its first two steps
+  and then exited. The whole-plan policy check now runs in both modes before any
+  preview. Step-by-step skips only the plan-level consent prompt and keeps
+  per-step preview and approval (closes
+  [#542](https://github.com/lacs-project/sysknife/issues/542)). Thanks to
+  [@QinXi-ai](https://github.com/QinXi-ai).
+- **The daemon rejects unknown action parameters before approval.**
+  ([#572](https://github.com/lacs-project/sysknife/pull/572)) Builders ignored a
+  misspelled optional key, so `SetKernelArguments` with `append` instead of
+  `add` approved and succeeded as a no-op. All 191 action builders now check the
+  object shape and accepted keys before they build a spec, the
+  dispatcher-only `ListJobHistory` path included, and the planner refuses
+  non-object parameters. Canonical names, deliberate aliases and defaults keep
+  working (closes [#551](https://github.com/lacs-project/sysknife/issues/551)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **`make daemon-install` activates the sudoers grants last.**
+  ([#586](https://github.com/lacs-project/sysknife/pull/586)) The recipe
+  installed the grants before the helpers they name, so a failure halfway left
+  live grants pointing at absent or stale helpers. The validated sudoers file
+  now goes in after the unit, the polkit rule and every helper. `make check`
+  now runs `scripts/ci-local.sh --fast`, test baseline and all-targets Clippy
+  included (closes [#549](https://github.com/lacs-project/sysknife/issues/549)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **A `(branch)` comment no longer exempts an action pin from verification.**
+  ([#577](https://github.com/lacs-project/sysknife/pull/577)) Any workflow step
+  could skip the tag-to-SHA check by labelling its pin a branch. The marker is
+  now allowed for `dtolnay/rust-toolchain` on `stable` only, and the verifier
+  checks that the pinned commit is reachable from that branch; an API error or
+  an unexpected comparison state fails the check. TruffleHog moved to its exact
+  v3.96.0 tag (closes [#547](https://github.com/lacs-project/sysknife/issues/547)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **The pre-commit secret screen knows every credential format the setup
+  wizard accepts.** ([#578](https://github.com/lacs-project/sysknife/pull/578))
+  It missed xAI, DeepSeek and Mistral keys and several OpenAI shapes. The test
+  enumerates the setup provider inventory and fails when a provider gains a key
+  format the screen does not cover. OpenAI keys now need a left token boundary,
+  so prose such as `task-runner-…` passes (closes
+  [#548](https://github.com/lacs-project/sysknife/issues/548)). Thanks to
+  [@QinXi-ai](https://github.com/QinXi-ai).
+- **The secret screen catches a key written right after an escape.**
+  ([#612](https://github.com/lacs-project/sysknife/pull/612)) The #578 boundary
+  treated `\n`, `\r`, `\t` and `%XX` as part of a word, so an OpenAI or
+  DeepSeek key in a JSON log or a recorded HTTP request passed the screen. Those
+  escapes now count as a boundary, and `--staged` has cases for an edited
+  tracked file in both directions (closes
+  [#601](https://github.com/lacs-project/sysknife/issues/601)). Thanks to
+  [@QinXi-ai](https://github.com/QinXi-ai).
+- **quinn-proto 0.11.19 (RUSTSEC-2026-0338 to RUSTSEC-2026-0342).**
+  ([#603](https://github.com/lacs-project/sysknife/pull/603)) No SysKnife build
+  compiles quinn-proto: the crate appears in `Cargo.lock` only. `cargo audit`
+  reads the lockfile, so I bumped it to clear the five advisories.
+- **event-listener 5.4.2 (RUSTSEC-2026-0221).**
+  ([#609](https://github.com/lacs-project/sysknife/pull/609)) The 5.4.1
+  `StackSlot` let a `!Send` tag set with `Event::with_tag` cross threads, a data
+  race in safe code. Unlike the other accepted `cargo audit` warnings, this one
+  reached the daemon and the CLI, through `sqlx-core`. `cargo audit` reports it
+  as an unsound warning rather than a vulnerability, so CI stayed green; nothing
+  in SysKnife sets a tag. The lockfile moves to 5.4.2, which carries the fix.
+
+### Fixed
+
+- **`sysknife audit verify` accepts healthy SQLite stores with running,
+  canceled or swept jobs.** ([#571](https://github.com/lacs-project/sysknife/pull/571))
+  Those transitions appended no signed status event, so verification failed on
+  a store nobody had touched. They now append one atomically with the status
+  change, and CLI text, CLI JSON and MCP reports all show the status verdict.
+  Historical `Running` and `Canceled` rows without an event stay inconclusive
+  (exit 2). An unsigned `Succeeded`, `Failed`, `RolledBack` or `NeedsReboot`
+  still counts as a disagreement (exit 1), because terminal transitions signed
+  their events before this fix and a forged completion must stay visible
+  (closes [#550](https://github.com/lacs-project/sysknife/issues/550)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **The CLI stops when the daemon reports a step as anything but succeeded.**
+  ([#594](https://github.com/lacs-project/sysknife/pull/594)) The runner treated
+  a completed IPC request as a successful action, so it ran the next step and
+  printed the success banner after a `Failed` or `RolledBack` result. It now
+  halts on `Failed`, `Canceled`, `RolledBack` or a nonterminal status with
+  exit 2, naming the action and the daemon summary. `NeedsReboot` exits 5 and
+  runs no dependent step (closes
+  [#477](https://github.com/lacs-project/sysknife/issues/477)). Thanks to
+  [@ITSMERNB](https://github.com/ITSMERNB).
+- **A preview refused after an earlier step ran exits 2, not 3.**
+  ([#584](https://github.com/lacs-project/sysknife/pull/584)) Exit 3 tells a
+  script that planning failed and a retry is safe, after part of the plan had
+  already applied. A refusal after execution now reports `ExecutionFailed` with
+  the action and the number of steps that ran. A refusal before any execution
+  keeps exit 3 (closes [#546](https://github.com/lacs-project/sysknife/issues/546)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **MCP execution keeps earlier step results when the transport fails.**
+  ([#576](https://github.com/lacs-project/sysknife/pull/576)) A lost connection
+  mid-plan returned a bare internal error and dropped every completed step.
+  The tool now returns those results plus the attempted step's outcome. A
+  connect failure or explicit rejection reports `failed`; a send, receive,
+  timeout or malformed response reports `unknown`, since the step may have
+  started (closes [#544](https://github.com/lacs-project/sysknife/issues/544)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **Providers stop retrying permanent 4xx responses.**
+  ([#589](https://github.com/lacs-project/sysknife/pull/589)) Both adapters
+  turned a 400, 404, 413 or 422 into a transport error, which the retry policy
+  retries, so each misconfigured request went out three times and was billed
+  three times. Adapters now report the HTTP status, and those requests go out
+  once. A `tool_use_failed` 400 still retries with its correction, as do 429,
+  5xx and transport failures (closes
+  [#475](https://github.com/lacs-project/sysknife/issues/475)). Thanks to
+  [@kragent66-glitch](https://github.com/kragent66-glitch).
+- **A 408 Request Timeout is retried.**
+  ([#613](https://github.com/lacs-project/sysknife/pull/613)) A 408 says the
+  server stopped reading before the request arrived, so the unchanged request is
+  the fix. It now gets the 5xx budget: three attempts, 400 ms then 800 ms apart.
+  Every other permanent 4xx still fails on the first attempt. Thanks to
+  [@kragent66-glitch](https://github.com/kragent66-glitch).
+- **Re-running a failed release job no longer stops at `gh release create`.**
+  ([#614](https://github.com/lacs-project/sysknife/pull/614)) The workflow now
+  skips creation when the release already exists, creates it when GitHub answers
+  `release not found`, and fails on any other lookup error, then goes on to
+  upload the assets (closes
+  [#554](https://github.com/lacs-project/sysknife/issues/554)). Thanks to
+  [@Humerous](https://github.com/Humerous).
+- **Re-running `sysknife-setup` keeps hand-edited hookify guards.**
+  ([#610](https://github.com/lacs-project/sysknife/pull/610)) Setup overwrote
+  every guard and logged it as created. It now writes each guard with exclusive
+  create, reports an existing one as skipped, and still creates the missing ones
+  (closes [#481](https://github.com/lacs-project/sysknife/issues/481)). Thanks
+  to [@CreedTech](https://github.com/CreedTech).
+- **Intent admission stops refusing ordinary requests that mention
+  credentials.** ([#587](https://github.com/lacs-project/sysknife/pull/587))
+  Substring matching refused disk-full alerts, `/etc/passwd` permissions and
+  password aging. Admission now looks for a value next to a credential label or
+  a known key format at a token boundary, so `--password=hunter2` and
+  `use password hunter2` are still refused and `PASSWORD_MAX_DAYS` goes through
+  (closes [#543](https://github.com/lacs-project/sysknife/issues/543)).
+  Thanks to [@QinXi-ai](https://github.com/QinXi-ai).
+- **`sysknife-cli` compiles on macOS again.**
+  ([#592](https://github.com/lacs-project/sysknife/pull/592)) One check matched
+  the Linux-only `SocketTarget::Vsock` variant without the Linux gate, which
+  stopped the build with E0599. The check now carries the same `cfg` as the
+  variant; off Linux nothing can construct one (closes
+  [#566](https://github.com/lacs-project/sysknife/issues/566)). Thanks to
+  [@yuee3](https://github.com/yuee3).
+- **`ci-local` fails when required CI coverage did not run.**
+  ([#570](https://github.com/lacs-project/sysknife/pull/570)) A missing helper
+  tool or a non-root run skipped required shell tests and still exited 0. Both
+  now count as incomplete, and the root-required test list comes from the
+  workflow invocations instead of a hand list (closes
+  [#433](https://github.com/lacs-project/sysknife/issues/433) and
+  [#555](https://github.com/lacs-project/sysknife/issues/555)). Thanks to
+  [@ITSMERNB](https://github.com/ITSMERNB).
+
+### Changed
+
+- Dependency bumps: regex 1.13.1, rmcp 3.5.1, uuid 1.27.0, zeroize 1.9.1 and
+  protoc-bin-vendored 3.3.0 ([#600](https://github.com/lacs-project/sysknife/pull/600)),
+  seven GitHub Actions ([#599](https://github.com/lacs-project/sysknife/pull/599)),
+  the npm minor and patch group ([#597](https://github.com/lacs-project/sysknife/pull/597)),
+  vitest and @vitest/coverage-v8 5.0.3 for the paused desktop shell, moved
+  together because the coverage plugin pins the exact vitest version
+  ([#605](https://github.com/lacs-project/sysknife/pull/605)),
+  the Debian and Rust container base digests
+  ([#595](https://github.com/lacs-project/sysknife/pull/595),
+  [#596](https://github.com/lacs-project/sysknife/pull/596)),
+  serde_json 1.0.152 and async-openai 0.42.2
+  ([#607](https://github.com/lacs-project/sysknife/pull/607)), tokio 1.53.3,
+  sha2 0.11.1, uuid 1.28.0, unicode-normalization 0.1.26 and libc 0.2.191
+  ([#624](https://github.com/lacs-project/sysknife/pull/624)), CodeQL, TruffleHog,
+  rust-toolchain, install-action and scorecard-action
+  ([#608](https://github.com/lacs-project/sysknife/pull/608),
+  [#625](https://github.com/lacs-project/sysknife/pull/625)), and the paused
+  shell's Tauri and npm dependencies
+  ([#606](https://github.com/lacs-project/sysknife/pull/606),
+  [#623](https://github.com/lacs-project/sysknife/pull/623)).
+
 ### Documentation
 
 - **`CONTRIBUTING.md` says the suite is only observed on Linux, and what a Mac
@@ -25,6 +257,31 @@ Releases before `0.2.5` predate the public launch; their notes live in the
   excludes a package that no longer exists (closes
   [#411](https://github.com/lacs-project/sysknife/issues/411)). Thanks to
   [@yuee3](https://github.com/yuee3).
+- **The docs match the code again.**
+  ([#609](https://github.com/lacs-project/sysknife/pull/609)) A review of
+  every maintained page against the source found drift in 30 files. The ones a
+  reader would act on:
+  - `docs/vm-daemon-setup.md` put the vsock token in the login user's home,
+    where the daemon never reads it, and never switched the daemon to vsock.
+    The token belongs at `/var/lib/sysknife/.config/sysknife/token`, and a
+    drop-in sets `SYSKNIFE_LISTEN_URI=vsock://:9734`.
+  - The same page said `make install` handles rpm-ostree on its own. It refuses
+    until you pass the `/etc` overrides, and still cannot finish (#301).
+  - `docs/mcp.md` said execution halts on a failed or unknown step. It halts on
+    anything but `succeeded`, `needs_reboot` included.
+  - `SECURITY.md` described the intent secret screen as matching bare words such
+    as "password", and the role table as a hand-written match. Both changed in
+    0.25.0: the screen looks for a value, and the role comes from the action's
+    risk tier.
+  - `docs/automatic-rollback.md` called signed status transitions future work.
+    They shipped, and `audit verify` checks them on SQLite.
+  - `docs/security/audit-advisories.md` listed 20 accepted advisories.
+    Two remain; RustSec withdrew the gtk-rs ones and the rest left the lockfile.
+  - The introduction and quickstart said the daemon runs as root. It runs as the
+    `sysknife` system user with scoped sudo and polkit grants.
+  - Contributor docs gave clippy without `--all-targets`, a `npm run tauri`
+    script that does not exist, a CI check for PR titles that does not run, and
+    an `e2e` PR label that triggers nothing.
 
 ## [0.25.0] — 2026-10-01
 

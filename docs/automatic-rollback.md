@@ -23,6 +23,13 @@ before the client ever sees a terminal result. There is no separate "approve
 the rollback" step — a failed rollback-eligible action rolls back
 automatically as part of finishing that job.
 
+One exception: when the daemon cannot confirm the failed action has stopped
+(a deadline it could not enforce), it skips the rollback, because rolling back
+over a running transaction would be worse than leaving it. The job stays
+`Failed`, its summary ends in `(automatic rollback skipped)`, and the daemon
+keeps the exclusion slot held, so no other mutating action starts until the
+daemon restarts.
+
 If the rollback command itself succeeds, the job transitions to
 `JobState::RolledBack` and the `JobResult` carries a `rollback_ref` describing
 what was reverted. If the rollback command also fails, the job stays
@@ -121,8 +128,10 @@ every other job result:
   (`forward_status_change_event`) so `RolledBack` is visible to external
   monitoring, not just the local database.
 - The `JobResult` returned to the client includes `rollback_ref` (currently
-  the literal string `"rpm-ostree rollback"`) so the caller — CLI, MCP tool,
-  or GUI — can show what was reverted.
+  the literal string `"rpm-ostree rollback"`) so the caller can show what was
+  reverted. The CLI renders a distinct `rolled back` status and prints
+  `rolled back with: rpm-ostree rollback`; MCP and GUI callers can use the
+  structured field directly.
 
 One nuance worth knowing: the Ed25519 hash chain in
 `crates/sysknife-daemon/src/audit_chain.rs` signs the **immutable fields**
@@ -131,14 +140,14 @@ decision — who asked for what, at what risk level). The transaction row
 names the requester; the accounts that approved, spent, or revoked the
 approval live in the approval-event chain (see
 [the-audit-chain.md](the-audit-chain.md)). `status` is a mutable
-column and is explicitly excluded from the signed payload — see the
-"Status mutations are not in the chain" note in `audit_chain.rs`. That means
-a completed rollback is durably recorded and forwarded, but the chain's
-tamper-evidence guarantees cover the fact that the risky action was approved,
-not the specific fact that it was later rolled back. If your threat model
-needs the status transition itself to be tamper-evident, that's tracked as
-future work (an append-only `audit_events` table), not something SysKnife
-claims today.
+column and stays out of the transaction row's signed payload, but each status
+change also appends a signed `status_*` event (a rollback writes
+`status_rolled_back`) to the append-only `audit_events` table, in the same
+SQLite transaction as the column write. On SQLite, `sysknife audit verify`
+compares every live status with its newest signed status event and exits `1`
+on a disagreement, so rewriting a rolled-back job's status is detectable.
+PostgreSQL stores have no status cross-check yet. See
+[Execution-status verification on SQLite](the-audit-chain.md#execution-status-verification-on-sqlite).
 
 ## See also
 
